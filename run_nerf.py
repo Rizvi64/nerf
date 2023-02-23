@@ -146,6 +146,9 @@ def render_rays(ray_batch,
         rgb_map = tf.reduce_sum(
             weights[..., None] * rgb, axis=-2)  # [N_rays, 3]
 
+        # map z-value to 0-1 // hear is 0.5 and far is 2.0
+        z_vals = (z_vals - 0.5) / 2.0
+
         # Estimated depth map is expected distance.
         depth_map = tf.reduce_sum(weights * z_vals, axis=-1)
 
@@ -159,6 +162,7 @@ def render_rays(ray_batch,
         # To composite onto a white background, use the accumulated alpha map.
         if white_bkgd:
             rgb_map = rgb_map + (1.-acc_map[..., None])
+            depth_map = depth_map + (1.-acc_map)
 
         return rgb_map, disp_map, acc_map, weights, depth_map
 
@@ -208,7 +212,8 @@ def render_rays(ray_batch,
         raw, z_vals, rays_d)
 
     if N_importance > 0:
-        rgb_map_0, disp_map_0, acc_map_0 = rgb_map, disp_map, acc_map
+        # rgb_map_0, disp_map_0, acc_map_0 = rgb_map, disp_map, acc_map
+        rgb_map_0, disp_map_0, acc_map_0, depth_map_0 = rgb_map, disp_map, acc_map, depth_map
 
         # Obtain additional integration times to evaluate based on the weights
         # assigned to colors in the coarse model.
@@ -228,13 +233,15 @@ def render_rays(ray_batch,
         rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(
             raw, z_vals, rays_d)
 
-    ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map}
+    # ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map}
+    ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map, 'depth_map': depth_map}
     if retraw:
         ret['raw'] = raw
     if N_importance > 0:
         ret['rgb0'] = rgb_map_0
         ret['disp0'] = disp_map_0
         ret['acc0'] = acc_map_0
+        ret['depth0'] = depth_map_0
         ret['z_std'] = tf.math.reduce_std(z_samples, -1)  # [N_rays]
 
     for k in ret:
@@ -330,7 +337,8 @@ def render(H, W, focal,
         k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
         all_ret[k] = tf.reshape(all_ret[k], k_sh)
 
-    k_extract = ['rgb_map', 'disp_map', 'acc_map']
+    # k_extract = ['rgb_map', 'disp_map', 'acc_map']
+    k_extract = ['rgb_map', 'disp_map', 'acc_map', 'depth_map']
     ret_list = [all_ret[k] for k in k_extract]
     ret_dict = {k: all_ret[k] for k in all_ret if k not in k_extract}
     return ret_list + [ret_dict]
@@ -353,7 +361,9 @@ def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=N
     for i, c2w in enumerate(render_poses):
         print(i, time.time() - t)
         t = time.time()
-        rgb, disp, acc, _ = render(
+        # rgb, disp, acc, _ = render(
+        #     H, W, focal, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
+        rgb, disp, acc, depth, _ = render(
             H, W, focal, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
         rgbs.append(rgb.numpy())
         disps.append(disp.numpy())
@@ -545,6 +555,9 @@ def config_parser():
     parser.add_argument("--half_res", action='store_true',
                         help='load blender synthetic data at 400x400 instead of 800x800')
 
+    parser.add_argument("--use_depth", action="store_true", 
+                        help='indicate if depth images will be used')
+
     # llff flags
     parser.add_argument("--factor", type=int, default=8,
                         help='downsample factor for LLFF images')
@@ -613,19 +626,24 @@ def train():
         print('NEAR FAR', near, far)
 
     elif args.dataset_type == 'blender':
+        # images, poses, render_poses, hwf, i_split = load_blender_data(
+        #     args.datadir, args.half_res, args.testskip, args.use_depth)
         images, poses, render_poses, hwf, i_split = load_blender_data(
-            args.datadir, args.half_res, args.testskip)
+            args.datadir, args.half_res, args.testskip, args.use_depth, args.white_bkgd)
         print('Loaded blender', images.shape,
               render_poses.shape, hwf, args.datadir)
-        i_train, i_val, i_test = i_split
+        # i_train, i_val, i_test = i_split
+        i_train, i_val, i_test, i_depth_train, i_depth_val, i_depth_test = i_split
 
-        near = 2.
-        far = 6.
+        # near = 2.
+        # far = 6.
+        near = 0.5
+        far = 2.5
 
-        if args.white_bkgd:
-            images = images[..., :3]*images[..., -1:] + (1.-images[..., -1:])
-        else:
-            images = images[..., :3]
+        # if args.white_bkgd:
+        #     images = images[..., :3]*images[..., -1:] + (1.-images[..., -1:])
+        # else:
+        #     images = images[..., :3]
 
     elif args.dataset_type == 'deepvoxels':
 
@@ -649,6 +667,7 @@ def train():
     H, W, focal = hwf
     H, W = int(H), int(W)
     hwf = [H, W, focal]
+    hwf_ = [H, W, focal / 1.5]
 
     if args.render_test:
         render_poses = np.array(poses[i_test])
@@ -693,7 +712,7 @@ def train():
         os.makedirs(testsavedir, exist_ok=True)
         print('test poses shape', render_poses.shape)
 
-        rgbs, _ = render_path(render_poses, hwf, args.chunk, render_kwargs_test,
+        rgbs, _ = render_path(render_poses, hwf_, args.chunk, render_kwargs_test,
                               gt_imgs=images, savedir=testsavedir, render_factor=args.render_factor)
         print('Done rendering', testsavedir)
         imageio.mimwrite(os.path.join(testsavedir, 'video.mp4'),
@@ -749,6 +768,10 @@ def train():
     print('TEST views are', i_test)
     print('VAL views are', i_val)
 
+    print("DEPTH TRAIN views are", i_depth_train) ## depth
+    print("DEPTH TEST views are", i_depth_test) ## depth
+    print("DEPTH VAL views are", i_depth_val) ## depth
+
     # Summary writers
     writer = tf.contrib.summary.create_file_writer(
         os.path.join(basedir, 'summaries', expname))
@@ -779,8 +802,14 @@ def train():
             target = images[img_i]
             pose = poses[img_i, :3, :4]
 
+            # get corresponding depth
+            img_depth_i = len(i_train) + len(i_test) + len(i_val) + img_i ## depth
+            target_depth = images[img_depth_i] ## depth
+            pose_depth = poses[img_depth_i, :3, :4] ## depth
+
             if N_rand is not None:
                 rays_o, rays_d = get_rays(H, W, focal, pose)
+                rays_depth_o, rays_depth_d = get_rays(H, W, focal, pose_depth) ## depth
                 if i < args.precrop_iters:
                     dH = int(H//2 * args.precrop_frac)
                     dW = int(W//2 * args.precrop_frac)
@@ -797,31 +826,57 @@ def train():
                 select_inds = np.random.choice(
                     coords.shape[0], size=[N_rand], replace=False)
                 select_inds = tf.gather_nd(coords, select_inds[:, tf.newaxis])
+
                 rays_o = tf.gather_nd(rays_o, select_inds)
                 rays_d = tf.gather_nd(rays_d, select_inds)
                 batch_rays = tf.stack([rays_o, rays_d], 0)
                 target_s = tf.gather_nd(target, select_inds)
+
+                rays_depth_o = tf.gather_nd(rays_depth_o, select_inds) ## depth
+                rays_depth_d = tf.gather_nd(rays_depth_d, select_inds) ## depth
+                batch_rays_depth = tf.stack([rays_depth_o, rays_depth_d], 0) ## depth
+                target_depth_s = tf.gather_nd(target_depth, select_inds) ## depth
+                # target_depth_s = 2.0 * tf.reduce_mean(target_depth_s, 1) + 0.5 ## depeth
+                target_depth_s = tf.reduce_mean(target_depth_s, 1) ## depeth
 
         #####  Core optimization loop  #####
 
         with tf.GradientTape() as tape:
 
             # Make predictions for color, disparity, accumulated opacity.
-            rgb, disp, acc, extras = render(
+            # rgb, disp, acc, extras = render(
+            #     H, W, focal, chunk=args.chunk, rays=batch_rays,
+            #     verbose=i < 10, retraw=True, **render_kwargs_train)
+
+            rgb, disp, acc, _, extras = render(
                 H, W, focal, chunk=args.chunk, rays=batch_rays,
+                verbose=i < 10, retraw=True, **render_kwargs_train)
+
+            _, _, _, depth, extras_depth = render(
+                H, W, focal, chunk=args.chunk, rays=batch_rays_depth,
                 verbose=i < 10, retraw=True, **render_kwargs_train)
 
             # Compute MSE loss between predicted and true RGB.
             img_loss = img2mse(rgb, target_s)
+            img_depth_loss = img2mse(depth, target_depth_s)
+
             trans = extras['raw'][..., -1]
-            loss = img_loss
-            psnr = mse2psnr(img_loss)
+            # loss = img_loss
+            # loss = img_depth_loss
+            loss = img_loss + img_depth_loss
+            # psnr = mse2psnr(img_loss)
+            psnr = mse2psnr(loss)
 
             # Add MSE loss for coarse-grained model
             if 'rgb0' in extras:
                 img_loss0 = img2mse(extras['rgb0'], target_s)
                 loss += img_loss0
                 psnr0 = mse2psnr(img_loss0)
+            
+            if 'depth0' in extras_depth:
+                img_depth_loss0 = img2mse(extras['depth0'], target_depth_s)
+                loss += img_depth_loss0
+                psnr0 = mse2psnr(img_depth_loss0)
 
         gradients = tape.gradient(loss, grad_vars)
         optimizer.apply_gradients(zip(gradients, grad_vars))
@@ -889,8 +944,18 @@ def train():
                 target = images[img_i]
                 pose = poses[img_i, :3, :4]
 
-                rgb, disp, acc, extras = render(H, W, focal, chunk=args.chunk, c2w=pose,
-                                                **render_kwargs_test)
+                # get corresponding depth
+                img_depth_i = len(i_train) + len(i_test) + len(i_val) + img_i ## depth
+                target_depth = images[img_depth_i] ## depth
+                pose_depth = poses[img_depth_i, :3, :4] ## depth
+
+                # rgb, disp, acc, extras = render(H, W, focal, chunk=args.chunk, c2w=pose,
+                #                                 **render_kwargs_test)
+                rgb, disp, acc, _, extras = render(H, W, focal, chunk=args.chunk, c2w=pose,
+                                **render_kwargs_test)
+
+                _, _, _, depth, extras_depth = render(H, W, focal, chunk=args.chunk, c2w=pose_depth,
+                                **render_kwargs_test)
 
                 psnr = mse2psnr(img2mse(rgb, target))
                 
@@ -898,7 +963,8 @@ def train():
                 testimgdir = os.path.join(basedir, expname, 'tboard_val_imgs')
                 if i==0:
                     os.makedirs(testimgdir, exist_ok=True)
-                imageio.imwrite(os.path.join(testimgdir, '{:06d}.png'.format(i)), to8b(rgb))
+                imageio.imwrite(os.path.join(testimgdir, 'rgb{:06d}.png'.format(i)), to8b(rgb))
+                imageio.imwrite(os.path.join(testimgdir, 'depth{:06d}.png'.format(i)), to8b(depth))
 
                 with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_img):
 
