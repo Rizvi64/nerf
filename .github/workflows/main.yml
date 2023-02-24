@@ -17,6 +17,7 @@ jobs:
     - name: Check conda version
       run: |
         conda --version
+        conda activate /anaconda3/envs/my_env
 
     - name: Install conda
       run: |
