@@ -14,6 +14,13 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - name: Set up conda
+      run: |
+        export PATH="$HOME/miniconda3/bin:$PATH"
+        echo "$HOME/miniconda3/bin" >> $GITHUB_PATH
+        conda init bash
+        source ~/.bashrc
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v2
       with:
@@ -23,7 +30,7 @@ jobs:
       run: |
         conda env create -f environment.yml
         conda activate nerf
-        conda install -c anaconda pylint
+        pip install pylint
         
     - name: Run Pylint
       run: |
