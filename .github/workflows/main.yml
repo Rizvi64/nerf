@@ -2,7 +2,7 @@ name: code quality
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
   build-and-test:
@@ -14,24 +14,20 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Check conda version
-      run: |
-        conda --version
-        source shell_script.sh
-        conda activate /anaconda3/envs/my_env
-        
     - name: Install conda
       run: |
         curl -O https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
         chmod +x Miniconda3-latest-Linux-x86_64.sh
         ./Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda
         export PATH="$HOME/miniconda/bin:$PATH"
+
     - name: Set up conda
       run: |
         export PATH="$HOME/miniconda3/bin:$PATH"
         echo "$HOME/miniconda3/bin" >> $GITHUB_PATH
         conda init bash
         source ~/.bashrc
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v2
       with:
@@ -39,20 +35,14 @@ jobs:
 
     - name: Configure conda environment
       run: |
-        conda init bash
-        eval "$(conda shell.bash hook)"
+        conda env create -f environment.yml
         conda activate nerf
-        
+        echo "conda activate nerf" >> $HOME/.bashrc
+
     - name: Install Dependencies
       run: |
-        conda env update -f environment.yml
-        conda activate nerf
-        pip install pylint black
-        
+        conda install black pylint
+
     - name: Run Pylint
       run: |
         pylint tiny_nerf.ipynb
-        
-    - name: Run Black
-      run: |
-        black tiny_nerf.ipynb
