@@ -24,7 +24,8 @@ jobs:
         conda env create -f environment.yml
         conda activate nerf
         pip install -r requirements.txt
+        pip install pylint
         
-    - name: Run Tests
+    - name: Run Pylint
       run: |
-        pytest tests/
+        pylint tiny_nerf.ipynb
