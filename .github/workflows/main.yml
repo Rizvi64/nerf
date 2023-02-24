@@ -1,4 +1,4 @@
-name: Build and Test
+name: code quality
 
 on:
   push:
@@ -17,7 +17,9 @@ jobs:
     - name: Check conda version
       run: |
         conda --version
+        source shell_script.sh
         conda activate /anaconda3/envs/my_env
+        
 
     - name: Install conda
       run: |
