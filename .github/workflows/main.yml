@@ -49,8 +49,10 @@ jobs:
 
     - name: Install Dependencies
       run: |
+        conda env remove --name nerf
         conda env create -f environment.yml
         conda activate nerf
+        conda env update -f environment.yml
         pip install pylint black
       shell: bash
         
