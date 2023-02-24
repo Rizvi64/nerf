@@ -28,6 +28,7 @@ jobs:
         
     - name: Install Dependencies
       run: |
+        conda init bash && source ~/.bashrc
         conda env create -f environment.yml
         conda activate nerf
         pip install -r requirements.txt
