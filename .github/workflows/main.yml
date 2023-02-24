@@ -61,10 +61,11 @@ jobs:
         
     - name: Run Pylint
       run: |
-        pylint tiny_nerf.ipynb
+        conda run -n nerf pylint tiny_nerf.ipynb
       shell: bash
+
 
     - name: Run Black
       run: |
-        black tiny_nerf.ipynb
+        conda run -n nerf black tiny_nerf.ipynb
       shell: bash
