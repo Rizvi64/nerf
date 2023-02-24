@@ -12,6 +12,13 @@ jobs:
         python-version: [3.7]
 
     steps:
+    - name: Initialize conda
+      uses: conda-incubator/setup-miniconda@v2
+      with:
+        auto-update-conda: true
+        
+    - run: echo "$HOME/miniconda3/bin" >> $GITHUB_PATH
+
     - uses: actions/checkout@v2
 
     - name: Set up Python ${{ matrix.python-version }}
