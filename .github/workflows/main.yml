@@ -50,6 +50,7 @@ jobs:
     - name: Install Dependencies
       run: |
         conda env remove --name nerf
+        conda init bash
         conda env create -f environment.yml
         conda activate nerf
         conda env update -f environment.yml
