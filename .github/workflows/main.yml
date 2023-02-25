@@ -1,8 +1,8 @@
-name: Build and Test
+name: code quality
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
   build-and-test:
@@ -14,17 +14,58 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - name: Install conda
+      run: |
+        curl -O https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+        chmod +x Miniconda3-latest-Linux-x86_64.sh
+        ./Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda
+        export PATH="$HOME/miniconda/bin:$PATH"
+        conda init bash
+        source ~/.bashrc
+    - name: Set up conda
+      run: |
+        export PATH="$HOME/miniconda3/bin:$PATH"
+        echo "$HOME/miniconda3/bin" >> $GITHUB_PATH
+        conda init bash
+        source ~/.bashrc
+    - name: Check conda version
+      run: |
+        conda --version
+      shell: bash
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
         
+    - name: Configure conda environment        
+      shell: bash
+      run: |
+          conda init bash
+          conda create -n nerf python=3.7
+          eval "$(conda shell.bash hook)"
+          conda activate nerf
+          conda install -c anaconda cudatoolkit=10.1
+          conda install -c conda-forge tensorflow-gpu=2.2.0
+
     - name: Install Dependencies
       run: |
+        conda env remove --name nerf
+        conda init bash
         conda env create -f environment.yml
+        eval "$(conda shell.bash hook)"
         conda activate nerf
-        pip install -r requirements.txt
+        conda env update -f environment.yml
+        pip install pylint black
+      shell: bash
+
         
-    - name: Run Tests
+    - name: Run Pylint
       run: |
-        pytest tests/
+        conda run -n nerf pylint run_nerf.py
+      shell: bash
+
+
+    - name: Run Black
+      run: |
+        conda run -n nerf black run_nerf.py
+      shell: bash
