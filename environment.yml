@@ -9,7 +9,6 @@ dependencies:
   - jupyterlab
   - pytorch==1.7.0
   - torchvision==0.8.1
-  - tensorflow
   - numpy
   - imageio
   - matplotlib
