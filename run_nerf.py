@@ -1,30 +1,35 @@
 """This script is for training a Neural Radiance Fields (NeRF) model on a set of input images.
-The script first sets up the necessary parameters for the training process, such as the dataset path, camera parameters, and model hyperparameters. 
-Then it creates the NeRF model using the NeRF() function defined in models.py. The script also sets up the optimizer and learning rate scheduling.
-Finally, it enters the training loop, where it samples random batches of rays and uses the render() function to compute the model's predictions for each ray. 
-The script then computes the loss between the predicted and true RGB values and backpropagates the error through the model to update its parameters. 
+The script first sets up the necessary parameters for the training process, 
+such as the dataset path, camera parameters, and model hyperparameters. 
+Then it creates the NeRF model using the NeRF() function defined in models.py. 
+The script also sets up the optimizer and learning rate scheduling.
+Finally, it enters the training loop, where it samples random batches of rays and 
+uses the render() function to compute the model's predictions for each ray. 
+The script then computes the loss between the predicted and true RGB values and 
+backpropagates the error through the model to update its parameters. 
 The training loop continues until the maximum number of iterations is reached. 
-During training, the script also logs the training and validation loss, the predicted images, and other relevant information using TensorFlow's summary writers.
+During training, the script also logs the training and validation loss, the predicted images,
+and other relevant information using TensorFlow's summary writers.
 """
+import sys
+import numpy as np
+import imageio
+import json
+import tensorflow as tf
+import random
+import os
+import time
 
 from load_blender import load_blender_data
 from load_deepvoxels import load_dv_data
 from load_llff import load_llff_data
 from run_nerf_helpers import *
-import os
-import time
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
-import sys
-import tensorflow as tf
-import numpy as np
-import imageio
-import json
-import random
+
 
 
 
 tf.compat.v1.enable_eager_execution()
-
 
 def batchify(file_name, chunk):
     """Constructs a version of 'fn' that applies to smaller batches."""
@@ -119,7 +124,7 @@ def render_rays(ray_batch,
         """
         # Function for computing density from model prediction. This value is
         # strictly between [0, 1].
-        def raw2alpha(raw, dists, act_fn=tf.nn.relu): 
+        def raw2alpha(raw, dists, act_fn=tf.nn.relu):
             return (1.0 - \
                     tf.exp(-act_fn(raw) * dists))
 
@@ -289,7 +294,7 @@ def render(height, width, focal,
       near: float or array of shape [batch_size]. Nearest distance for a ray.
       far: float or array of shape [batch_size]. Farthest distance for a ray.
       use_viewdirs: bool. If True, use viewing direction of a point in space in model.
-      c2w_staticcam: array of shape [3, 4]. If not None, use this transformation matrix for 
+      c2w_staticcam: array of shape [3, 4]. If not None, use this transformation matrix for
        camera while using other c2w argument for viewing directions.
 
     Returns:
@@ -348,10 +353,14 @@ def render(height, width, focal,
     return ret_list + [ret_dict]
 
 """The render_path function renders a set of views of a scene given a set of camera poses.
-It takes as input the camera poses, the height, width and focal length of the camera, a chunk size, render arguments, ground truth images, the directory to save rendered images, and a rendering factor. 
-If render_factor is not zero, the function downsamples the images for faster rendering. The function iterates through the camera poses, renders the corresponding view, and appends the rendered image and disparity to lists. 
-If ground truth images are provided and render_factor is zero, it calculates the peak signal-to-noise ratio (PSNR) between the rendered and ground truth images. 
-If a directory is specified, it saves the rendered images in that directory. The function returns the list of rendered images and disparities.
+It takes as input the camera poses, the height, width and focal length of the camera,
+a chunk size, render arguments, ground truth images, the directory to save rendered images,
+and a rendering factor. If render_factor is not zero, the function downsamples the images for faster rendering.
+The function iterates through the camera poses, renders the corresponding view,
+and appends the rendered image and disparity to lists. If ground truth images are provided and render_factor is zero,
+it calculates the peak signal-to-noise ratio (PSNR) between the rendered and ground truth images.
+If a directory is specified, it saves the rendered images in that directory.
+The function returns the list of rendered images and disparities.
 """
 def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=None, render_factor=0):
     """Renders a sequence of images along a camera path."""
@@ -364,7 +373,7 @@ def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=N
         width //= render_factor
         focal /= render_factor
 
-    rgbs, disps = [], []
+    rgbs, disps = [],[]
 
     for i, c2w in enumerate(render_poses):
         print(i, time.time() - t)
@@ -461,8 +470,8 @@ def create_nerf(args):
     if args.ft_path is not None and args.ft_path != 'None':
         ckpts = [args.ft_path]
     else:
-        ckpts = [os.path.join(basedir, expname, f) 
-                 for f in sorted(os.listdir(os.path.join(basedir, expname))) 
+        ckpts = [os.path.join(basedir, expname, f)
+                 for f in sorted(os.listdir(os.path.join(basedir, expname)))
                  if('model_' in f and 'fine' not in f and 'optimizer' not in f)]
     print('Found ckpts', ckpts)
     if len(ckpts) > 0 and not args.no_reload:
@@ -529,7 +538,7 @@ def config_parser():
     parser.add_argument("--precrop_iters", type=int, default=0,
                         help='number of steps to train on central crops')
     parser.add_argument("--precrop_frac", type=float,
-                        default=.5, help='fraction of img taken for central crops')    
+                        default=.5, help='fraction of img taken for central crops')
 
     # rendering options
     parser.add_argument("--num_samples", type=int, default=64,
@@ -548,7 +557,6 @@ def config_parser():
                         help='log2 of max freq for positional encoding (2D direction)')
     parser.add_argument("--raw_noise_std", type=float, default=0.,
                         help='std dev of noise added to regularize sigma_a output, 1e0 recommended')
-
     parser.add_argument("--render_only", action='store_true',
                         help='do not optimize, reload weights and render out render_poses path')
     parser.add_argument("--render_test", action='store_true',
@@ -585,15 +593,15 @@ def config_parser():
                         help='will take every 1/N images as LLFF test set, paper uses 8')
 
     # logging/saving options
-    parser.add_argument("--i_print",   type=int, default=100,
+    parser.add_argument("--i_print", type=int, default=100,
                         help='frequency of console printout and metric loggin')
-    parser.add_argument("--i_img",     type=int, default=500,
+    parser.add_argument("--i_img", type=int, default=500,
                         help='frequency of tensorboard image logging')
     parser.add_argument("--i_weights", type=int, default=10000,
                         help='frequency of weight ckpt saving')
     parser.add_argument("--i_testset", type=int, default=50000,
                         help='frequency of testset saving')
-    parser.add_argument("--i_video",   type=int, default=50000,
+    parser.add_argument("--i_video", type=int, default=50000,
                         help='frequency of render_poses video saving')
 
     return parser
@@ -602,7 +610,6 @@ def config_parser():
 def train():
     parser = config_parser()
     args = parser.parse_args()
-    
     if args.random_seed is not None:
         print('Fixing random seed', args.random_seed)
         np.random.seed(args.random_seed)
@@ -743,7 +750,6 @@ def train():
     use_batching = not args.no_batching
     if use_batching:
         # For random ray batching.
-        #
         # Constructs an array 'rays_rgb' of shape [N*H*W, 3, 3] where axis=1 is
         # interpreted as,
         #   axis=0: ray origin in world space
@@ -811,8 +817,8 @@ def train():
                     dH = int(height//2 * args.precrop_frac)
                     dW = int(width//2 * args.precrop_frac)
                     coords = tf.stack(tf.meshgrid(
-                        tf.range(height//2 - dH, height//2 + dH), 
-                        tf.range(width//2 - dW, width//2 + dW), 
+                        tf.range(height//2 - dH, height//2 + dH),
+                        tf.range(width//2 - dW, width//2 + dW),
                         indexing='ij'), -1)
                     if i < 10:
                         print('precrop', dH, dW, coords[0,0], coords[-1,-1])
