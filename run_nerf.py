@@ -39,19 +39,23 @@ def batchify(file_name, chunk):
 def run_network(inputs, viewdirs, file_name, embed_fn, embeddirs_fn, netchunk=1024*64):
     """Prepares inputs and applies network 'fn'."""
 
-    inputs_flat = tf.reshape(inputs, [-1, inputs.shape[-1]])
+    def reshape(inputs):
+        return tf.reshape(inputs, [-1, inputs.shape[-1]])
 
-    embedded = embed_fn(inputs_flat)
-    if viewdirs is not None:
-        input_dirs = tf.broadcast_to(viewdirs[:, None], inputs.shape)
-        input_dirs_flat = tf.reshape(input_dirs, [-1, input_dirs.shape[-1]])
-        embedded_dirs = embeddirs_fn(input_dirs_flat)
-        embedded = tf.concat([embedded, embedded_dirs], -1)
+    with tf.device('/cpu:0'):
+        inputs_flat = reshape(inputs)
+        embedded = embed_fn(inputs_flat)
+        if viewdirs is not None:
+            input_dirs = tf.broadcast_to(viewdirs[:, None], inputs.shape)
+            input_dirs_flat = reshape(input_dirs)
+            embedded_dirs = embeddirs_fn(input_dirs_flat)
+            embedded = tf.concat([embedded, embedded_dirs], -1)
 
-    outputs_flat = batchify(fn, netchunk)(embedded)
-    outputs = tf.reshape(outputs_flat, list(
-        inputs.shape[:-1]) + [outputs_flat.shape[-1]])
+    with tf.device('/gpu:0'):
+        outputs_flat = batchify(fn, netchunk)(embedded)
+        outputs = tf.reshape(outputs_flat, list(inputs.shape[:-1]) + [outputs_flat.shape[-1]])
     return outputs
+
 
 
 def render_rays(ray_batch,
@@ -240,28 +244,28 @@ def render_rays(ray_batch,
 
     ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map}
     if retraw:
-        ret['raw'] = raw
+        ret[f'raw'] = raw
     if num_importance > 0:
         ret['rgb0'] = rgb_map_0
         ret['disp0'] = disp_map_0
         ret['acc0'] = acc_map_0
         ret['z_std'] = tf.math.reduce_std(z_samples, -1)  # [num_rays]
 
-    for k in ret:
-        tf.debugging.check_numerics(ret[k], 'output {}'.format(k))
+#     ret = network_fn(ray_batch, **kwargs)
+    for k, v in ret.items():
+        tf.debugging.check_numerics(v, 'output {}'.format(k))
     return ret
 
-def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
+def batchify_rays(rays_flat, chunk=1024*32, network_fn=None, **kwargs):
     """Render rays in smaller minibatches to avoid OOM."""
     all_ret = {}
     for i in range(0, rays_flat.shape[0], chunk):
-        ret = render_rays(rays_flat[i:i+chunk], **kwargs)
-        for k in ret:
+        ret = render_rays(rays_flat[i:i+chunk], network_fn=network_fn, **kwargs)
+        for k, v in ret.items():
             if k not in all_ret:
-                all_ret[k] = []
-            all_ret[k].append(ret[k])
-
-    all_ret = {k: tf.concat(all_ret[k], 0) for k in all_ret}
+                all_ret[k] = v
+            else:
+                all_ret[k] = tf.concat([all_ret[k], v], axis=0)
     return all_ret
 
 
@@ -349,29 +353,26 @@ If render_factor is not zero, the function downsamples the images for faster ren
 If ground truth images are provided and render_factor is zero, it calculates the peak signal-to-noise ratio (PSNR) between the rendered and ground truth images. 
 If a directory is specified, it saves the rendered images in that directory. The function returns the list of rendered images and disparities.
 """
-def render_path(render_poses, hwf, chunk,
-                render_kwargs, gt_imgs=None,
-                savedir=None, render_factor=0):
+def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=None, render_factor=0):
+    """Renders a sequence of images along a camera path."""
 
     height, width, focal = hwf
 
     if render_factor != 0:
         # Render downsampled for speed
-        height = height//render_factor
-        width = width//render_factor
-        focal = focal/render_factor
+        height //= render_factor
+        width //= render_factor
+        focal /= render_factor
 
-    rgbs = []
-    disps = []
+    rgbs, disps = [], []
 
-    t = time.time()
     for i, c2w in enumerate(render_poses):
         print(i, time.time() - t)
         t = time.time()
-        rgb, disp, acc, _ = render(
-            height, width, focal, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
+        rgb, disp, acc, _ = render(height, width, focal, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
         rgbs.append(rgb.numpy())
         disps.append(disp.numpy())
+
         if i == 0:
             print(rgb.shape, disp.shape)
 
@@ -381,13 +382,14 @@ def render_path(render_poses, hwf, chunk,
 
         if savedir is not None:
             rgb8 = to8b(rgbs[-1])
-            filename = os.path.join(savedir, '{:03d}.png'.format(i))
+            filename = os.path.join(savedir, f"{i:03d}.png")
             imageio.imwrite(filename, rgb8)
 
-    rgbs = np.stack(rgbs, 0)
-    disps = np.stack(disps, 0)
+    rgbs = np.stack(rgbs)
+    disps = np.stack(disps)
 
     return rgbs, disps
+
 
 """ The render_path function renders a set of views of a scene given a set of camera poses. It takes as input the camera poses, the height, width and focal length of the camera,
 a chunk size, render arguments, ground truth images, the directory to save rendered images, and a rendering factor. If render_factor is not zero, the function downsamples the images for faster rendering.
