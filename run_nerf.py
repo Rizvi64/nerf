@@ -11,14 +11,14 @@ The training loop continues until the maximum number of iterations is reached.
 During training, the script also logs the training and validation loss, the predicted images,
 and other relevant information using TensorFlow's summary writers.
 """
-import sys
-import numpy as np
 import imageio
-import json
-import tensorflow as tf
-import random
 import os
 import time
+import tensorflow as tf
+import sys
+import json
+import random
+import numpy as np
 
 from load_blender import load_blender_data
 from load_deepvoxels import load_dv_data
@@ -690,14 +690,13 @@ def train():
     basedir = args.basedir
     expname = args.expname
     os.makedirs(os.path.join(basedir, expname), exist_ok=True)
-    f = os.path.join(basedir, expname, 'args.txt')
-    with open(f, 'w') as file:
+    filee = os.path.join(basedir, expname, 'args.txt')
+    with open(filee, 'w') as file:
         for arg in sorted(vars(args)):
             attr = getattr(args, arg)
-            file.write('{} = {}\n'.format(arg, attr))
+            file.write(f'{arg} = {attr}\n')
     if args.config is not None:
-        f = os.path.join(basedir, expname, 'config.txt')
-        with open(f, 'w') as file:
+        filee = os.path.join(basedir, expname, 'config.txt')
             file.write(open(args.config, 'r').read())
 
     # Create nerf model
@@ -721,7 +720,7 @@ def train():
             # Default is smoother render_poses path
             images = None
 
-        testsavedir = os.path.join(basedir, expname, 'renderonly_{}_{:06d}'.format(
+        testsavedir = os.path.join(basedir, expname, f'renderonly_{"test" if args.render_test else "path"}_{start:06d}')
             'test' if args.render_test else 'path', start))
         os.makedirs(testsavedir, exist_ok=True)
         print('test poses shape', render_poses.shape)
@@ -864,8 +863,7 @@ def train():
         # Rest is logging
 
         def save_weights(net, prefix, i):
-            path = os.path.join(
-                basedir, expname, '{}_{:06d}.npy'.format(prefix, i))
+            path = os.path.join(basedir, expname, f'{prefix}_{i:06d}.npy')
             np.save(path, net.get_weights())
             print('saved weights at', path)
 
@@ -878,11 +876,10 @@ def train():
             rgbs, disps = render_path(
                 render_poses, hwf, args.chunk, render_kwargs_test)
             print('Done, saving', rgbs.shape, disps.shape)
-            moviebase = os.path.join(
-                basedir, expname, '{}_spiral_{:06d}_'.format(expname, i))
-            imageio.mimwrite(moviebase + 'rgb.mp4',
+            moviebase = os.path.join(basedir, expname, f'{expname}_spiral_{i:06d}_')
+            imageio.mimwrite(f'{moviebase}rgb.mp4',
                              to8b(rgbs), fps=30, quality=8)
-            imageio.mimwrite(moviebase + 'disp.mp4',
+            imageio.mimwrite(f'{moviebase}disp.mp4',
                              to8b(disps / np.max(disps)), fps=30, quality=8)
 
             if args.use_viewdirs:
@@ -890,12 +887,11 @@ def train():
                 rgbs_still, _ = render_path(
                     render_poses, hwf, args.chunk, render_kwargs_test)
                 render_kwargs_test['c2w_staticcam'] = None
-                imageio.mimwrite(moviebase + 'rgb_still.mp4',
+                imageio.mimwrite(f'{moviebase}rgb_still.mp4',
                                  to8b(rgbs_still), fps=30, quality=8)
 
         if i % args.i_testset == 0 and i > 0:
-            testsavedir = os.path.join(
-                basedir, expname, 'testset_{:06d}'.format(i))
+            testsavedir = os.path.join(basedir, expname, f'testset_{i:06d}')
             os.makedirs(testsavedir, exist_ok=True)
             print('test poses shape', poses[i_test].shape)
             render_path(poses[i_test], hwf, args.chunk, render_kwargs_test,
@@ -928,7 +924,7 @@ def train():
                 testimgdir = os.path.join(basedir, expname, 'tboard_val_imgs')
                 if i==0:
                     os.makedirs(testimgdir, exist_ok=True)
-                imageio.imwrite(os.path.join(testimgdir, '{:06d}.png'.format(i)), to8b(rgb))
+                imageio.imwrite(os.path.join(testimgdir, f'{i:06d}.png'), to8b(rgb))
 
                 with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_img):
 
