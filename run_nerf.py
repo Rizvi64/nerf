@@ -323,7 +323,7 @@ def render(height, width, focal,
         viewdirs = viewdirs / tf.linalg.norm(viewdirs, axis=-1, keepdims=True)
         viewdirs = tf.cast(tf.reshape(viewdirs, [-1, 3]), dtype=tf.float32)
 
-    sh = rays_d.shape  # [..., 3]
+    shpe = rays_d.shape  # [..., 3]
     if ndc:
         # for forward facing scenes
         rays_o, rays_d = ndc_rays(
@@ -344,7 +344,7 @@ def render(height, width, focal,
     # Render and reshape
     all_ret = batchify_rays(rays, chunk, **kwargs)
     for k in all_ret:
-        k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
+        k_sh = list(shpe[:-1]) + list(all_ret[k].shape[1:])
         all_ret[k] = tf.reshape(all_ret[k], k_sh)
 
     k_extract = ['rgb_map', 'disp_map', 'acc_map']
@@ -376,8 +376,8 @@ def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=N
     rgbs, disps = [],[]
 
     for i, c2w in enumerate(render_poses):
-        print(i, time.time() - t)
-        t = time.time()
+        print(i, time.time() - tym)
+        tym = time.time()
         rgb, disp, acc, _ = render(height, width, focal, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
         rgbs.append(rgb.numpy())
         disps.append(disp.numpy())
@@ -404,8 +404,8 @@ def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=N
 a chunk size, render arguments, ground truth images, the directory to save rendered images, and a rendering factor. If render_factor is not zero, the function downsamples the images for faster rendering.
 The function iterates through the camera poses, renders the corresponding view, and appends the rendered image and disparity to lists. If ground truth images are provided and render_factor is zero, 
 it calculates the peak signal-to-noise ratio (PSNR) between the rendered and ground truth images. If a directory is specified, it saves the rendered images in that directory.
-The function returns the list of rendered images and disparities.
-"""
+The function returns the list of rendered images and disparities."""
+
 def create_nerf(args):
     """Instantiate NeRF's MLP model."""
 
@@ -680,7 +680,7 @@ def train():
 
     # Cast intrinsics to right types
     height, width, focal = hwf
-    height, width = int(height), int(Width)
+    height, width = int(height), int(width)
     hwf = [height, width, focal]
 
     if args.render_test:
@@ -774,7 +774,7 @@ def train():
         print('done')
         i_batch = 0
 
-    N_iters = 1000000
+    n_iters = 1000000
     print('Begin')
     print('TRAIN views are', i_train)
     print('TEST views are', i_test)
@@ -785,7 +785,7 @@ def train():
         os.path.join(basedir, 'summaries', expname))
     writer.set_as_default()
 
-    for i in range(start, N_iters):
+    for i in range(start, n_iters):
         time0 = time.time()
 
         # Sample random ray batch
@@ -813,14 +813,14 @@ def train():
             if N_rand is not None:
                 rays_o, rays_d = get_rays(height, width, focal, pose)
                 if i < args.precrop_iters:
-                    dH = int(height//2 * args.precrop_frac)
-                    dW = int(width//2 * args.precrop_frac)
+                    d_h = int(height//2 * args.precrop_frac)
+                    d_w = int(width//2 * args.precrop_frac)
                     coords = tf.stack(tf.meshgrid(
-                        tf.range(height//2 - dH, height//2 + dH),
-                        tf.range(width//2 - dW, width//2 + dW),
+                        tf.range(height//2 - d_h, height//2 + d_h),
+                        tf.range(width//2 - d_w, width//2 + d_w),
                         indexing='ij'), -1)
                     if i < 10:
-                        print('precrop', dH, dW, coords[0,0], coords[-1,-1])
+                        print('precrop', d_h, d_w, coords[0,0], coords[-1,-1])
                 else:
                     coords = tf.stack(tf.meshgrid(
                         tf.range(height), tf.range(width), indexing='ij'), -1)
@@ -856,7 +856,7 @@ def train():
         gradients = tape.gradient(loss, grad_vars)
         optimizer.apply_gradients(zip(gradients, grad_vars))
 
-        dt = time.time()-time0
+        d_tym = time.time()-time0
 
         #####           end            #####
 
@@ -901,7 +901,7 @@ def train():
         if i % args.i_print == 0 or i < 10:
 
             print(expname, i, psnr.numpy(), loss.numpy(), global_step.numpy())
-            print('iter time {:.05f}'.format(dt))
+            print('iter time {:.05f}'.format(d_tym))
             with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_print):
                 tf.contrib.summary.scalar('loss', loss)
                 tf.contrib.summary.scalar('psnr', psnr)
