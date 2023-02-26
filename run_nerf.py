@@ -695,10 +695,10 @@ def train():
         for arg in sorted(vars(args)):
             attr = getattr(args, arg)
             file.write(f'{arg} = {attr}\n')
-    if args.config is not None:
-        filee = os.path.join(basedir, expname, 'config.txt')
+        if args.config is not None:
+            filee = os.path.join(basedir, expname, 'config.txt')
             file.write(open(args.config, 'r').read())
-
+            
     # Create nerf model
     render_kwargs_train, render_kwargs_test, start, grad_vars, models = create_nerf(
         args)
