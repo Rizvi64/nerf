@@ -892,7 +892,7 @@ def train():
                 basedir, expname, 'testset_{:06d}'.format(i))
             os.makedirs(testsavedir, exist_ok=True)
             print('test poses shape', poses[i_test].shape)
-            render_path(poses[i_test], hwf, args.chunk, render_kwargs_test,F
+            render_path(poses[i_test], hwf, args.chunk, render_kwargs_test,
                         gt_imgs=images[i_test], savedir=testsavedir)
             print('Saved test set')
 
