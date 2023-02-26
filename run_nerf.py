@@ -1,23 +1,23 @@
+from load_blender import load_blender_data
+from load_deepvoxels import load_dv_data
+from load_llff import load_llff_data
+from run_nerf_helpers import *
 import os
+import time
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
-
 import sys
 import tensorflow as tf
 import numpy as np
 import imageio
 import json
 import random
-import time
-from run_nerf_helpers import *
-from load_llff import load_llff_data
-from load_deepvoxels import load_dv_data
-from load_blender import load_blender_data
+
 
 
 tf.compat.v1.enable_eager_execution()
 
 
-def batchify(fn, chunk):
+def batchify(file_name, chunk):
     """Constructs a version of 'fn' that applies to smaller batches."""
     if chunk is None:
         return fn
@@ -27,7 +27,7 @@ def batchify(fn, chunk):
     return ret
 
 
-def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024*64):
+def run_network(inputs, viewdirs, file_name, embed_fn, embeddirs_fn, netchunk=1024*64):
     """Prepares inputs and applies network 'fn'."""
 
     inputs_flat = tf.reshape(inputs, [-1, inputs.shape[-1]])
@@ -48,15 +48,14 @@ def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024*64):
 def render_rays(ray_batch,
                 network_fn,
                 network_query_fn,
-                N_samples,
+                num_samples,
                 retraw=False,
                 lindisp=False,
                 perturb=0.,
-                N_importance=0,
+                num_importance=0,
                 network_fine=None,
                 white_bkgd=False,
-                raw_noise_std=0.,
-                verbose=False):
+                raw_noise_std=0.):
     """Volumetric rendering.
 
     Args:
@@ -107,8 +106,8 @@ def render_rays(ray_batch,
         """
         # Function for computing density from model prediction. This value is
         # strictly between [0, 1].
-        def raw2alpha(raw, dists, act_fn=tf.nn.relu): return 1.0 - \
-            tf.exp(-act_fn(raw) * dists)
+        def raw2alpha(raw, dists, act_fn=tf.nn.relu): 
+            return 1.0 - \ tf.exp(-act_fn(raw) * dists)
 
         # Compute 'distance' (in time) between each integration time along a ray.
         dists = z_vals[..., 1:] - z_vals[..., :-1]
@@ -116,14 +115,14 @@ def render_rays(ray_batch,
         # The 'distance' from the last integration time is infinity.
         dists = tf.concat(
             [dists, tf.broadcast_to([1e10], dists[..., :1].shape)],
-            axis=-1)  # [N_rays, N_samples]
+            axis=-1)  # [num_rays, N_samples]
 
         # Multiply each distance by the norm of its corresponding direction ray
         # to convert to real world distance (accounts for non-unit directions).
         dists = dists * tf.linalg.norm(rays_d[..., None, :], axis=-1)
 
         # Extract RGB of each sample position along each ray.
-        rgb = tf.math.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
+        rgb = tf.math.sigmoid(raw[..., :3])  # [num_rays, N_samples, 3]
 
         # Add noise to model's predictions for density. Can be used to
         # regularize network during training (prevents floater artifacts).
@@ -133,18 +132,18 @@ def render_rays(ray_batch,
 
         # Predict density of each sample along each ray. Higher values imply
         # higher likelihood of being absorbed at this point.
-        alpha = raw2alpha(raw[..., 3] + noise, dists)  # [N_rays, N_samples]
+        alpha = raw2alpha(raw[..., 3] + noise, dists)  # [num_rays, N_samples]
 
         # Compute weight for RGB of each sample along each ray.  A cumprod() is
         # used to express the idea of the ray not having reflected up to this
         # sample yet.
-        # [N_rays, N_samples]
+        # [num_rays, N_samples]
         weights = alpha * \
             tf.math.cumprod(1.-alpha + 1e-10, axis=-1, exclusive=True)
 
         # Computed weighted color of each sample along each ray.
         rgb_map = tf.reduce_sum(
-            weights[..., None] * rgb, axis=-2)  # [N_rays, 3]
+            weights[..., None] * rgb, axis=-2)  # [num_rays, 3]
 
         # Estimated depth map is expected distance.
         depth_map = tf.reduce_sum(weights * z_vals, axis=-1)
@@ -164,10 +163,10 @@ def render_rays(ray_batch,
 
     ###############################
     # batch size
-    N_rays = ray_batch.shape[0]
+    num_rays = ray_batch.shape[0]
 
     # Extract ray origin, direction.
-    rays_o, rays_d = ray_batch[:, 0:3], ray_batch[:, 3:6]  # [N_rays, 3] each
+    rays_o, rays_d = ray_batch[:, 0:3], ray_batch[:, 3:6]  # [num_rays, 3] each
 
     # Extract unit-normalized viewing direction.
     viewdirs = ray_batch[:, -3:] if ray_batch.shape[-1] > 8 else None
@@ -186,7 +185,7 @@ def render_rays(ray_batch,
     else:
         # Sample linearly in inverse depth (disparity).
         z_vals = 1./(1./near * (1.-t_vals) + 1./far * (t_vals))
-    z_vals = tf.broadcast_to(z_vals, [N_rays, N_samples])
+    z_vals = tf.broadcast_to(z_vals, [num_rays, N_samples])
 
     # Perturb sampling time along each ray.
     if perturb > 0.:
@@ -200,11 +199,11 @@ def render_rays(ray_batch,
 
     # Points in space to evaluate model at.
     pts = rays_o[..., None, :] + rays_d[..., None, :] * \
-        z_vals[..., :, None]  # [N_rays, N_samples, 3]
+        z_vals[..., :, None]  # [num_rays, N_samples, 3]
 
     # Evaluate model at each point.
-    raw = network_query_fn(pts, viewdirs, network_fn)  # [N_rays, N_samples, 4]
-    rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(
+    raw = network_query_fn(pts, viewdirs, network_fn)  # [num_rays, N_samples, 4]
+    rgb_map, disp_map, acc_map, weights = raw2outputs(
         raw, z_vals, rays_d)
 
     if N_importance > 0:
@@ -220,7 +219,7 @@ def render_rays(ray_batch,
         # Obtain all points to evaluate color, density at.
         z_vals = tf.sort(tf.concat([z_vals, z_samples], -1), -1)
         pts = rays_o[..., None, :] + rays_d[..., None, :] * \
-            z_vals[..., :, None]  # [N_rays, N_samples + N_importance, 3]
+            z_vals[..., :, None]  # [num_rays, N_samples + N_importance, 3]
 
         # Make predictions with network_fine.
         run_fn = network_fn if network_fine is None else network_fine
@@ -235,7 +234,7 @@ def render_rays(ray_batch,
         ret['rgb0'] = rgb_map_0
         ret['disp0'] = disp_map_0
         ret['acc0'] = acc_map_0
-        ret['z_std'] = tf.math.reduce_std(z_samples, -1)  # [N_rays]
+        ret['z_std'] = tf.math.reduce_std(z_samples, -1)  # [num_rays]
 
     for k in ret:
         tf.debugging.check_numerics(ret[k], 'output {}'.format(k))
@@ -810,8 +809,7 @@ def train():
 
             # Make predictions for color, disparity, accumulated opacity.
             rgb, disp, acc, extras = render(
-                H, W, focal, chunk=args.chunk, rays=batch_rays,
-                verbose=i < 10, retraw=True, **render_kwargs_train)
+                H, W, focal, chunk=args.chunk, rays=batch_rays, retraw=True, **render_kwargs_train)
 
             # Compute MSE loss between predicted and true RGB.
             img_loss = img2mse(rgb, target_s)
