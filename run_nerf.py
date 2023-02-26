@@ -256,7 +256,7 @@ def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
     return all_ret
 
 
-def render(H, W, focal,
+def render(Height, Width, focal,
            chunk=1024*32, rays=None, c2w=None, ndc=True,
            near=0., far=1.,
            use_viewdirs=False, c2w_staticcam=None,
@@ -288,7 +288,7 @@ def render(H, W, focal,
 
     if c2w is not None:
         # special case to render full image
-        rays_o, rays_d = get_rays(H, W, focal, c2w)
+        rays_o, rays_d = get_rays(Height, Width, focal, c2w)
     else:
         # use provided ray batch
         rays_o, rays_d = rays
@@ -298,7 +298,7 @@ def render(H, W, focal,
         viewdirs = rays_d
         if c2w_staticcam is not None:
             # special case to visualize effect of viewdirs
-            rays_o, rays_d = get_rays(H, W, focal, c2w_staticcam)
+            rays_o, rays_d = get_rays(Height, Width, focal, c2w_staticcam)
 
         # Make all directions unit magnitude.
         # shape: [batch_size, 3]
@@ -309,7 +309,7 @@ def render(H, W, focal,
     if ndc:
         # for forward facing scenes
         rays_o, rays_d = ndc_rays(
-            H, W, focal, tf.cast(1., tf.float32), rays_o, rays_d)
+            Height, Width, focal, tf.cast(1., tf.float32), rays_o, rays_d)
 
     # Create ray batch
     rays_o = tf.cast(tf.reshape(rays_o, [-1, 3]), dtype=tf.float32)
@@ -339,12 +339,12 @@ def render_path(render_poses, hwf, chunk,
                 render_kwargs, gt_imgs=None,
                 savedir=None, render_factor=0):
 
-    H, W, focal = hwf
+    Height, Width, focal = hwf
 
     if render_factor != 0:
         # Render downsampled for speed
-        H = H//render_factor
-        W = W//render_factor
+        Height = Height//render_factor
+        Width = Width//render_factor
         focal = focal/render_factor
 
     rgbs = []
@@ -355,7 +355,7 @@ def render_path(render_poses, hwf, chunk,
         print(i, time.time() - t)
         t = time.time()
         rgb, disp, acc, _ = render(
-            H, W, focal, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
+            Height, Width, focal, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
         rgbs.append(rgb.numpy())
         disps.append(disp.numpy())
         if i == 0:
@@ -647,9 +647,9 @@ def train():
         return
 
     # Cast intrinsics to right types
-    H, W, focal = hwf
-    H, W = int(H), int(W)
-    hwf = [H, W, focal]
+    Height, Width, focal = hwf
+    Height, Width = int(Height), int(Width)
+    hwf = [Height, Width, focal]
 
     if args.render_test:
         render_poses = np.array(poses[i_test])
@@ -725,14 +725,14 @@ def train():
         #   axis=1: ray direction in world space
         #   axis=2: observed RGB color of pixel
         print('get rays')
-        # get_rays_np() returns rays_origin=[H, W, 3], rays_direction=[H, W, 3]
+        # get_rays_np() returns rays_origin=[Height, W, 3], rays_direction=[H, W, 3]
         # for each pixel in the image. This stack() adds a new dimension.
-        rays = [get_rays_np(H, W, focal, p) for p in poses[:, :3, :4]]
+        rays = [get_rays_np(Height, Width, focal, p) for p in poses[:, :3, :4]]
         rays = np.stack(rays, axis=0)  # [N, ro+rd, H, W, 3]
         print('done, concats')
-        # [N, ro+rd+rgb, H, W, 3]
+        # [N, ro+rd+rgb, Height, Width, 3]
         rays_rgb = np.concatenate([rays, images[:, None, ...]], 1)
-        # [N, H, W, ro+rd+rgb, 3]
+        # [N, Height, Width, ro+rd+rgb, 3]
         rays_rgb = np.transpose(rays_rgb, [0, 2, 3, 1, 4])
         rays_rgb = np.stack([rays_rgb[i]
                              for i in i_train], axis=0)  # train images only
@@ -781,19 +781,19 @@ def train():
             pose = poses[img_i, :3, :4]
 
             if N_rand is not None:
-                rays_o, rays_d = get_rays(H, W, focal, pose)
+                rays_o, rays_d = get_rays(Height, Width, focal, pose)
                 if i < args.precrop_iters:
-                    dH = int(H//2 * args.precrop_frac)
-                    dW = int(W//2 * args.precrop_frac)
+                    dH = int(Height//2 * args.precrop_frac)
+                    dW = int(Width//2 * args.precrop_frac)
                     coords = tf.stack(tf.meshgrid(
-                        tf.range(H//2 - dH, H//2 + dH), 
-                        tf.range(W//2 - dW, W//2 + dW), 
+                        tf.range(Height//2 - dH, Height//2 + dH), 
+                        tf.range(Width//2 - dW, Width//2 + dW), 
                         indexing='ij'), -1)
                     if i < 10:
                         print('precrop', dH, dW, coords[0,0], coords[-1,-1])
                 else:
                     coords = tf.stack(tf.meshgrid(
-                        tf.range(H), tf.range(W), indexing='ij'), -1)
+                        tf.range(Height), tf.range(Width), indexing='ij'), -1)
                 coords = tf.reshape(coords, [-1, 2])
                 select_inds = np.random.choice(
                     coords.shape[0], size=[N_rand], replace=False)
@@ -809,7 +809,7 @@ def train():
 
             # Make predictions for color, disparity, accumulated opacity.
             rgb, disp, acc, extras = render(
-                H, W, focal, chunk=args.chunk, rays=batch_rays, retraw=True, **render_kwargs_train)
+                Height, Width, focal, chunk=args.chunk, rays=batch_rays, retraw=True, **render_kwargs_train)
 
             # Compute MSE loss between predicted and true RGB.
             img_loss = img2mse(rgb, target_s)
@@ -889,7 +889,7 @@ def train():
                 target = images[img_i]
                 pose = poses[img_i, :3, :4]
 
-                rgb, disp, acc, extras = render(H, W, focal, chunk=args.chunk, c2w=pose,
+                rgb, disp, acc, extras = render(Height, Width, focal, chunk=args.chunk, c2w=pose,
                                                 **render_kwargs_test)
                 psnr = mse2psnr(img2mse(rgb, target))
                 
