@@ -66,12 +66,12 @@ def render_rays(ray_batch,
       network_fn: function. Model for predicting RGB and density at each point
         in space.
       network_query_fn: function used for passing queries to network_fn.
-      N_samples: int. Number of different times to sample along each ray.
+      num_samples: int. Number of different times to sample along each ray.
       retraw: bool. If True, include model's raw, unprocessed predictions.
       lindisp: bool. If True, sample linearly in inverse depth rather than in depth.
       perturb: float, 0 or 1. If non-zero, each ray is sampled at stratified
         random points in time.
-      N_importance: int. Number of additional times to sample along each ray.
+      num_importance: int. Number of additional times to sample along each ray.
         These samples are only passed to network_fine.
       network_fine: "fine" network with same spec as network_fn.
       white_bkgd: bool. If True, assume a white background.
@@ -118,14 +118,14 @@ def render_rays(ray_batch,
         # The 'distance' from the last integration time is infinity.
         dists = tf.concat(
             [dists, tf.broadcast_to([1e10], dists[..., :1].shape)],
-            axis=-1)  # [num_rays, N_samples]
+            axis=-1)  # [num_rays, num_samples]
 
         # Multiply each distance by the norm of its corresponding direction ray
         # to convert to real world distance (accounts for non-unit directions).
         dists = dists * tf.linalg.norm(rays_d[..., None, :], axis=-1)
 
         # Extract RGB of each sample position along each ray.
-        rgb = tf.math.sigmoid(raw[..., :3])  # [num_rays, N_samples, 3]
+        rgb = tf.math.sigmoid(raw[..., :3])  # [num_rays, num_samples, 3]
 
         # Add noise to model's predictions for density. Can be used to
         # regularize network during training (prevents floater artifacts).
@@ -135,12 +135,12 @@ def render_rays(ray_batch,
 
         # Predict density of each sample along each ray. Higher values imply
         # higher likelihood of being absorbed at this point.
-        alpha = raw2alpha(raw[..., 3] + noise, dists)  # [num_rays, N_samples]
+        alpha = raw2alpha(raw[..., 3] + noise, dists)  # [num_rays, num_samples]
 
         # Compute weight for RGB of each sample along each ray.  A cumprod() is
         # used to express the idea of the ray not having reflected up to this
         # sample yet.
-        # [num_rays, N_samples]
+        # [num_rays, num_samples]
         weights = alpha * \
             tf.math.cumprod(1.-alpha + 1e-10, axis=-1, exclusive=True)
 
@@ -180,7 +180,7 @@ def render_rays(ray_batch,
 
     # Decide where to sample along each ray. Under the logic, all rays will be sampled at
     # the same times.
-    t_vals = tf.linspace(0., 1., N_samples)
+    t_vals = tf.linspace(0., 1., num_samples)
     if not lindisp:
         # Space integration times linearly between 'near' and 'far'. Same
         # integration points will be used for all rays.
@@ -188,7 +188,7 @@ def render_rays(ray_batch,
     else:
         # Sample linearly in inverse depth (disparity).
         z_vals = 1./(1./near * (1.-t_vals) + 1./far * (t_vals))
-    z_vals = tf.broadcast_to(z_vals, [num_rays, N_samples])
+    z_vals = tf.broadcast_to(z_vals, [num_rays, num_samples])
 
     # Perturb sampling time along each ray.
     if perturb > 0.:
@@ -202,27 +202,27 @@ def render_rays(ray_batch,
 
     # Points in space to evaluate model at.
     pts = rays_o[..., None, :] + rays_d[..., None, :] * \
-        z_vals[..., :, None]  # [num_rays, N_samples, 3]
+        z_vals[..., :, None]  # [num_rays, num_samples, 3]
 
     # Evaluate model at each point.
-    raw = network_query_fn(pts, viewdirs, network_fn)  # [num_rays, N_samples, 4]
+    raw = network_query_fn(pts, viewdirs, network_fn)  # [num_rays, num_samples, 4]
     rgb_map, disp_map, acc_map, weights = raw2outputs(
         raw, z_vals, rays_d)
 
-    if N_importance > 0:
+    if num_importance > 0:
         rgb_map_0, disp_map_0, acc_map_0 = rgb_map, disp_map, acc_map
 
         # Obtain additional integration times to evaluate based on the weights
         # assigned to colors in the coarse model.
         z_vals_mid = .5 * (z_vals[..., 1:] + z_vals[..., :-1])
         z_samples = sample_pdf(
-            z_vals_mid, weights[..., 1:-1], N_importance, det=perturb == 0.)
+            z_vals_mid, weights[..., 1:-1], num_importance, det=perturb == 0.)
         z_samples = tf.stop_gradient(z_samples)
 
         # Obtain all points to evaluate color, density at.
         z_vals = tf.sort(tf.concat([z_vals, z_samples], -1), -1)
         pts = rays_o[..., None, :] + rays_d[..., None, :] * \
-            z_vals[..., :, None]  # [num_rays, N_samples + N_importance, 3]
+            z_vals[..., :, None]  # [num_rays, num_samples + num_importance, 3]
 
         # Make predictions with network_fine.
         run_fn = network_fn if network_fine is None else network_fine
@@ -233,7 +233,7 @@ def render_rays(ray_batch,
     ret = {'rgb_map': rgb_map, 'disp_map': disp_map, 'acc_map': acc_map}
     if retraw:
         ret['raw'] = raw
-    if N_importance > 0:
+    if num_importance > 0:
         ret['rgb0'] = rgb_map_0
         ret['disp0'] = disp_map_0
         ret['acc0'] = acc_map_0
@@ -259,7 +259,7 @@ def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
     return all_ret
 
 
-def render(Height, Width, focal,
+def render(height, width, focal,
            chunk=1024*32, rays=None, c2w=None, ndc=True,
            near=0., far=1.,
            use_viewdirs=False, c2w_staticcam=None,
@@ -267,8 +267,8 @@ def render(Height, Width, focal,
     """Render rays
 
     Args:
-      H: int. Height of image in pixels.
-      W: int. Width of image in pixels.
+      H: int. height of image in pixels.
+      W: int. width of image in pixels.
       focal: float. Focal length of pinhole camera.
       chunk: int. Maximum number of rays to process simultaneously. Used to
         control maximum memory usage. Does not affect final results.
@@ -291,7 +291,7 @@ def render(Height, Width, focal,
 
     if c2w is not None:
         # special case to render full image
-        rays_o, rays_d = get_rays(Height, Width, focal, c2w)
+        rays_o, rays_d = get_rays(height, width, focal, c2w)
     else:
         # use provided ray batch
         rays_o, rays_d = rays
@@ -301,7 +301,7 @@ def render(Height, Width, focal,
         viewdirs = rays_d
         if c2w_staticcam is not None:
             # special case to visualize effect of viewdirs
-            rays_o, rays_d = get_rays(Height, Width, focal, c2w_staticcam)
+            rays_o, rays_d = get_rays(height, width, focal, c2w_staticcam)
 
         # Make all directions unit magnitude.
         # shape: [batch_size, 3]
@@ -312,7 +312,7 @@ def render(Height, Width, focal,
     if ndc:
         # for forward facing scenes
         rays_o, rays_d = ndc_rays(
-            Height, Width, focal, tf.cast(1., tf.float32), rays_o, rays_d)
+            height, width, focal, tf.cast(1., tf.float32), rays_o, rays_d)
 
     # Create ray batch
     rays_o = tf.cast(tf.reshape(rays_o, [-1, 3]), dtype=tf.float32)
@@ -342,12 +342,12 @@ def render_path(render_poses, hwf, chunk,
                 render_kwargs, gt_imgs=None,
                 savedir=None, render_factor=0):
 
-    Height, Width, focal = hwf
+    height, width, focal = hwf
 
     if render_factor != 0:
         # Render downsampled for speed
-        Height = Height//render_factor
-        Width = Width//render_factor
+        height = height//render_factor
+        width = width//render_factor
         focal = focal/render_factor
 
     rgbs = []
@@ -358,7 +358,7 @@ def render_path(render_poses, hwf, chunk,
         print(i, time.time() - t)
         t = time.time()
         rgb, disp, acc, _ = render(
-            Height, Width, focal, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
+            height, width, focal, chunk=chunk, c2w=c2w[:3, :4], **render_kwargs)
         rgbs.append(rgb.numpy())
         disps.append(disp.numpy())
         if i == 0:
@@ -399,7 +399,7 @@ def create_nerf(args):
     models = {'model': model}
 
     model_fine = None
-    if args.N_importance > 0:
+    if args.num_importance > 0:
         model_fine = init_nerf_model(
             D=args.netdepth_fine, W=args.netwidth_fine,
             input_ch=input_ch, output_ch=output_ch, skips=skips,
@@ -416,9 +416,9 @@ def create_nerf(args):
     render_kwargs_train = {
         'network_query_fn': network_query_fn,
         'perturb': args.perturb,
-        'N_importance': args.N_importance,
+        'num_importance': args.num_importance,
         'network_fine': model_fine,
-        'N_samples': args.N_samples,
+        'num_samples': args.num_samples,
         'network_fn': model,
         'use_viewdirs': args.use_viewdirs,
         'white_bkgd': args.white_bkgd,
@@ -510,9 +510,9 @@ def config_parser():
                         default=.5, help='fraction of img taken for central crops')    
 
     # rendering options
-    parser.add_argument("--N_samples", type=int, default=64,
+    parser.add_argument("--num_samples", type=int, default=64,
                         help='number of coarse samples per ray')
-    parser.add_argument("--N_importance", type=int, default=0,
+    parser.add_argument("--num_importance", type=int, default=0,
                         help='number of additional fine samples per ray')
     parser.add_argument("--perturb", type=float, default=1.,
                         help='set to 0. for no jitter, 1. for jitter')
@@ -650,9 +650,9 @@ def train():
         return
 
     # Cast intrinsics to right types
-    Height, Width, focal = hwf
-    Height, Width = int(Height), int(Width)
-    hwf = [Height, Width, focal]
+    height, width, focal = hwf
+    height, width = int(height), int(Width)
+    hwf = [height, width, focal]
 
     if args.render_test:
         render_poses = np.array(poses[i_test])
@@ -728,18 +728,18 @@ def train():
         #   axis=1: ray direction in world space
         #   axis=2: observed RGB color of pixel
         print('get rays')
-        # get_rays_np() returns rays_origin=[Height, W, 3], rays_direction=[H, W, 3]
+        # get_rays_np() returns rays_origin=[height, weight, 3], rays_direction=[H, W, 3]
         # for each pixel in the image. This stack() adds a new dimension.
-        rays = [get_rays_np(Height, Width, focal, p) for p in poses[:, :3, :4]]
+        rays = [get_rays_np(height, width, focal, p) for p in poses[:, :3, :4]]
         rays = np.stack(rays, axis=0)  # [N, ro+rd, H, W, 3]
         print('done, concats')
-        # [N, ro+rd+rgb, Height, Width, 3]
+        # [N, ro+rd+rgb, height, width, 3]
         rays_rgb = np.concatenate([rays, images[:, None, ...]], 1)
-        # [N, Height, Width, ro+rd+rgb, 3]
+        # [N, height, width, ro+rd+rgb, 3]
         rays_rgb = np.transpose(rays_rgb, [0, 2, 3, 1, 4])
         rays_rgb = np.stack([rays_rgb[i]
                              for i in i_train], axis=0)  # train images only
-        # [(N-1)*H*W, ro+rd+rgb, 3]
+        # [(N-1)*height*weight, ro+rd+rgb, 3]
         rays_rgb = np.reshape(rays_rgb, [-1, 3, 3])
         rays_rgb = rays_rgb.astype(np.float32)
         print('shuffle rays')
@@ -784,19 +784,19 @@ def train():
             pose = poses[img_i, :3, :4]
 
             if N_rand is not None:
-                rays_o, rays_d = get_rays(Height, Width, focal, pose)
+                rays_o, rays_d = get_rays(height, width, focal, pose)
                 if i < args.precrop_iters:
-                    dH = int(Height//2 * args.precrop_frac)
-                    dW = int(Width//2 * args.precrop_frac)
+                    dH = int(height//2 * args.precrop_frac)
+                    dW = int(width//2 * args.precrop_frac)
                     coords = tf.stack(tf.meshgrid(
-                        tf.range(Height//2 - dH, Height//2 + dH), 
-                        tf.range(Width//2 - dW, Width//2 + dW), 
+                        tf.range(height//2 - dH, height//2 + dH), 
+                        tf.range(width//2 - dW, width//2 + dW), 
                         indexing='ij'), -1)
                     if i < 10:
                         print('precrop', dH, dW, coords[0,0], coords[-1,-1])
                 else:
                     coords = tf.stack(tf.meshgrid(
-                        tf.range(Height), tf.range(Width), indexing='ij'), -1)
+                        tf.range(height), tf.range(width), indexing='ij'), -1)
                 coords = tf.reshape(coords, [-1, 2])
                 select_inds = np.random.choice(
                     coords.shape[0], size=[N_rand], replace=False)
@@ -812,7 +812,7 @@ def train():
 
             # Make predictions for color, disparity, accumulated opacity.
             rgb, disp, acc, extras = render(
-                Height, Width, focal, chunk=args.chunk, rays=batch_rays, retraw=True, **render_kwargs_train)
+                height, width, focal, chunk=args.chunk, rays=batch_rays, retraw=True, **render_kwargs_train)
 
             # Compute MSE loss between predicted and true RGB.
             img_loss = img2mse(rgb, target_s)
@@ -870,7 +870,7 @@ def train():
                 basedir, expname, 'testset_{:06d}'.format(i))
             os.makedirs(testsavedir, exist_ok=True)
             print('test poses shape', poses[i_test].shape)
-            render_path(poses[i_test], hwf, args.chunk, render_kwargs_test,
+            render_path(poses[i_test], hwf, args.chunk, render_kwargs_test,F
                         gt_imgs=images[i_test], savedir=testsavedir)
             print('Saved test set')
 
@@ -882,7 +882,7 @@ def train():
                 tf.contrib.summary.scalar('loss', loss)
                 tf.contrib.summary.scalar('psnr', psnr)
                 tf.contrib.summary.histogram('tran', trans)
-                if args.N_importance > 0:
+                if args.num_importance > 0:
                     tf.contrib.summary.scalar('psnr0', psnr0)
 
             if i % args.i_img == 0:
@@ -892,7 +892,7 @@ def train():
                 target = images[img_i]
                 pose = poses[img_i, :3, :4]
 
-                rgb, disp, acc, extras = render(Height, Width, focal, chunk=args.chunk, c2w=pose,
+                rgb, disp, acc, extras = render(height, width, focal, chunk=args.chunk, c2w=pose,
                                                 **render_kwargs_test)
                 psnr = mse2psnr(img2mse(rgb, target))
                 
@@ -913,7 +913,7 @@ def train():
                     tf.contrib.summary.scalar('psnr_holdout', psnr)
                     tf.contrib.summary.image('rgb_holdout', target[tf.newaxis])
 
-                if args.N_importance > 0:
+                if args.num_importance > 0:
 
                     with tf.contrib.summary.record_summaries_every_n_global_steps(args.i_img):
                         tf.contrib.summary.image(
