@@ -125,7 +125,7 @@ def render_rays(ray_batch,
         # Extract RGB of each sample position along each ray.
         rgb = tf.math.sigmoid(raw[..., :3])  # [N_rays, N_samples, 3]
 
-        # Add noise to model's predictions for density. Can be used to 
+        # Add noise to model's predictions for density. Can be used to
         # regularize network during training (prevents floater artifacts).
         noise = 0.
         if raw_noise_std > 0.:
@@ -214,7 +214,7 @@ def render_rays(ray_batch,
         # assigned to colors in the coarse model.
         z_vals_mid = .5 * (z_vals[..., 1:] + z_vals[..., :-1])
         z_samples = sample_pdf(
-            z_vals_mid, weights[..., 1:-1], N_importance, det=(perturb == 0.))
+            z_vals_mid, weights[..., 1:-1], N_importance, det=perturb == 0.)
         z_samples = tf.stop_gradient(z_samples)
 
         # Obtain all points to evaluate color, density at.
@@ -336,7 +336,9 @@ def render(H, W, focal,
     return ret_list + [ret_dict]
 
 
-def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=None, render_factor=0):
+def render_path(render_poses, hwf, chunk,
+                render_kwargs, gt_imgs=None,
+                savedir=None, render_factor=0):
 
     H, W, focal = hwf
 
@@ -439,8 +441,9 @@ def create_nerf(args):
     if args.ft_path is not None and args.ft_path != 'None':
         ckpts = [args.ft_path]
     else:
-        ckpts = [os.path.join(basedir, expname, f) for f in sorted(os.listdir(os.path.join(basedir, expname))) if
-                 ('model_' in f and 'fine' not in f and 'optimizer' not in f)]
+        ckpts = [os.path.join(basedir, expname, f) 
+                 for f in sorted(os.listdir(os.path.join(basedir, expname))) 
+                 if('model_' in f and 'fine' not in f and 'optimizer' not in f)]
     print('Found ckpts', ckpts)
     if len(ckpts) > 0 and not args.no_reload:
         ft_weights = ckpts[-1]
@@ -573,7 +576,6 @@ def config_parser():
 
 
 def train():
-
     parser = config_parser()
     args = parser.parse_args()
     
@@ -891,7 +893,6 @@ def train():
 
                 rgb, disp, acc, extras = render(H, W, focal, chunk=args.chunk, c2w=pose,
                                                 **render_kwargs_test)
-
                 psnr = mse2psnr(img2mse(rgb, target))
                 
                 # Save out the validation image for Tensorboard-free monitoring
