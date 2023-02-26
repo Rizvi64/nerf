@@ -63,9 +63,3 @@ jobs:
       run: |
         conda run -n nerf pylint run_nerf.py
       shell: bash
-
-
-    - name: Run Black
-      run: |
-        conda run -n nerf black run_nerf.py
-      shell: bash
