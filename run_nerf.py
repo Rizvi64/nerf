@@ -249,9 +249,7 @@ def render_rays(ray_batch,
 
     for k in ret:
         tf.debugging.check_numerics(ret[k], 'output {}'.format(k))
-
     return ret
-
 
 def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
     """Render rays in smaller minibatches to avoid OOM."""
