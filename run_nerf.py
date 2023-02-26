@@ -1,4 +1,12 @@
-"""This script is for training a Neural Radiance Fields (NeRF) model on a set of input images. The script first sets up the necessary parameters for the training process, such as the dataset path, camera parameters, and model hyperparameters. Then it creates the NeRF model using the NeRF() function defined in models.py. The script also sets up the optimizer and learning rate scheduling. Finally, it enters the training loop, where it samples random batches of rays and uses the render() function to compute the model's predictions for each ray. The script then computes the loss between the predicted and true RGB values and backpropagates the error through the model to update its parameters. The training loop continues until the maximum number of iterations is reached. During training, the script also logs the training and validation loss, the predicted images, and other relevant information using TensorFlow's summary writers."""
+"""This script is for training a Neural Radiance Fields (NeRF) model on a set of input images.
+The script first sets up the necessary parameters for the training process, such as the dataset path, camera parameters, and model hyperparameters. 
+Then it creates the NeRF model using the NeRF() function defined in models.py. The script also sets up the optimizer and learning rate scheduling.
+Finally, it enters the training loop, where it samples random batches of rays and uses the render() function to compute the model's predictions for each ray. 
+The script then computes the loss between the predicted and true RGB values and backpropagates the error through the model to update its parameters. 
+The training loop continues until the maximum number of iterations is reached. 
+During training, the script also logs the training and validation loss, the predicted images, and other relevant information using TensorFlow's summary writers.
+"""
+
 from load_blender import load_blender_data
 from load_deepvoxels import load_dv_data
 from load_llff import load_llff_data
@@ -337,7 +345,12 @@ def render(height, width, focal,
     ret_dict = {k: all_ret[k] for k in all_ret if k not in k_extract}
     return ret_list + [ret_dict]
 
-
+"""The render_path function renders a set of views of a scene given a set of camera poses.
+It takes as input the camera poses, the height, width and focal length of the camera, a chunk size, render arguments, ground truth images, the directory to save rendered images, and a rendering factor. 
+If render_factor is not zero, the function downsamples the images for faster rendering. The function iterates through the camera poses, renders the corresponding view, and appends the rendered image and disparity to lists. 
+If ground truth images are provided and render_factor is zero, it calculates the peak signal-to-noise ratio (PSNR) between the rendered and ground truth images. 
+If a directory is specified, it saves the rendered images in that directory. The function returns the list of rendered images and disparities.
+"""
 def render_path(render_poses, hwf, chunk,
                 render_kwargs, gt_imgs=None,
                 savedir=None, render_factor=0):
@@ -378,7 +391,12 @@ def render_path(render_poses, hwf, chunk,
 
     return rgbs, disps
 
-
+""" The render_path function renders a set of views of a scene given a set of camera poses. It takes as input the camera poses, the height, width and focal length of the camera,
+a chunk size, render arguments, ground truth images, the directory to save rendered images, and a rendering factor. If render_factor is not zero, the function downsamples the images for faster rendering.
+The function iterates through the camera poses, renders the corresponding view, and appends the rendered image and disparity to lists. If ground truth images are provided and render_factor is zero, 
+it calculates the peak signal-to-noise ratio (PSNR) between the rendered and ground truth images. If a directory is specified, it saves the rendered images in that directory.
+The function returns the list of rendered images and disparities.
+"""
 def create_nerf(args):
     """Instantiate NeRF's MLP model."""
 
@@ -462,6 +480,10 @@ def create_nerf(args):
 
     return render_kwargs_train, render_kwargs_test, start, grad_vars, models
 
+"""The config_parser function appears to be responsible for parsing configuration settings for the NeRF model. 
+It uses the configargparse module to define and parse the configuration settings. 
+The function returns a parser object that can be used to access the parsed configuration settings.
+"""
 
 def config_parser():
 
