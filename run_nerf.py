@@ -721,7 +721,6 @@ def train():
             images = None
 
         testsavedir = os.path.join(basedir, expname, f'renderonly_{"test" if args.render_test else "path"}_{start:06d}')
-            'test' if args.render_test else 'path', start))
         os.makedirs(testsavedir, exist_ok=True)
         print('test poses shape', render_poses.shape)
 
