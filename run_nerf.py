@@ -107,7 +107,9 @@ def render_rays(ray_batch,
         # Function for computing density from model prediction. This value is
         # strictly between [0, 1].
         def raw2alpha(raw, dists, act_fn=tf.nn.relu): 
-            return 1.0 - \ tf.exp(-act_fn(raw) * dists)
+            return (1.0 - \
+                    tf.exp(-act_fn(raw) * dists))
+
 
         # Compute 'distance' (in time) between each integration time along a ray.
         dists = z_vals[..., 1:] - z_vals[..., :-1]
