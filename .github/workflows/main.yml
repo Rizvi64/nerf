@@ -62,4 +62,5 @@ jobs:
     - name: Run Pylint
       run: |
         conda run -n nerf pylint run_nerf.py
+        conda run -n myenv pylint --fix --verbose run_nerf.py
       shell: bash
