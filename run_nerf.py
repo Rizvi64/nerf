@@ -400,11 +400,16 @@ def render_path(render_poses, hwf, chunk, render_kwargs, gt_imgs=None, savedir=N
     return rgbs, disps
 
 
-""" The render_path function renders a set of views of a scene given a set of camera poses. It takes as input the camera poses, the height, width and focal length of the camera,
-a chunk size, render arguments, ground truth images, the directory to save rendered images, and a rendering factor. If render_factor is not zero, the function downsamples the images for faster rendering.
-The function iterates through the camera poses, renders the corresponding view, and appends the rendered image and disparity to lists. If ground truth images are provided and render_factor is zero, 
-it calculates the peak signal-to-noise ratio (PSNR) between the rendered and ground truth images. If a directory is specified, it saves the rendered images in that directory.
-The function returns the list of rendered images and disparities."""
+""" The render_path function renders a set of views of a scene given a set of camera poses.
+It takes as input the camera poses, the height, width and focal length of the camera, a chunk size,
+render arguments, ground truth images, the directory to save rendered images, and a rendering factor.
+If render_factor is not zero, the function downsamples the images for faster rendering.
+The function iterates through the camera poses, renders the corresponding view,
+and appends the rendered image and disparity to lists. If ground truth images are provided and
+render_factor is zero, it calculates the peak signal-to-noise ratio (PSNR) between the rendered and
+ground truth images. If a directory is specified, it saves the rendered images in that directory.
+The function returns the list of rendered images and disparities.
+"""
 
 def create_nerf(args):
     """Instantiate NeRF's MLP model."""
@@ -486,7 +491,6 @@ def create_nerf(args):
                 ft_weights[:-11], ft_weights[-10:])
             print('Reloading fine from', ft_weights_fine)
             model_fine.set_weights(np.load(ft_weights_fine, allow_pickle=True))
-
     return render_kwargs_train, render_kwargs_test, start, grad_vars, models
 
 """The config_parser function appears to be responsible for parsing configuration settings for the NeRF model. 
