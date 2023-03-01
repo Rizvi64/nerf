@@ -509,7 +509,6 @@ def config_parser():
                         help='where to store ckpts and logs')
     parser.add_argument("--datadir", type=str,
                         default='./data/llff/fern', help='input data directory')
-
     # training options
     parser.add_argument("--netdepth", type=int, default=8,
                         help='layers in network')
@@ -537,13 +536,12 @@ def config_parser():
                         help='specific weights npy file to reload for coarse network')
     parser.add_argument("--random_seed", type=int, default=None,
                         help='fix random seed for repeatability')
-    
+   
     # pre-crop options
     parser.add_argument("--precrop_iters", type=int, default=0,
                         help='number of steps to train on central crops')
     parser.add_argument("--precrop_frac", type=float,
                         default=.5, help='fraction of img taken for central crops')
-
     # rendering options
     parser.add_argument("--num_samples", type=int, default=64,
                         help='number of coarse samples per ray')
@@ -567,23 +565,19 @@ def config_parser():
                         help='render the test set instead of render_poses path')
     parser.add_argument("--render_factor", type=int, default=0,
                         help='downsampling factor to speed up rendering, set 4 or 8 for fast preview')
-
     # dataset options
     parser.add_argument("--dataset_type", type=str, default='llff',
                         help='options: llff / blender / deepvoxels')
     parser.add_argument("--testskip", type=int, default=8,
                         help='will load 1/N images from test/val sets, useful for large datasets like deepvoxels')
-
     # deepvoxels flags
     parser.add_argument("--shape", type=str, default='greek',
                         help='options : armchair / cube / greek / vase')
-
     # blender flags
     parser.add_argument("--white_bkgd", action='store_true',
                         help='set to render synthetic data on a white bkgd (always use for dvoxels)')
     parser.add_argument("--half_res", action='store_true',
                         help='load blender synthetic data at 400x400 instead of 800x800')
-
     # llff flags
     parser.add_argument("--factor", type=int, default=8,
                         help='downsample factor for LLFF images')
@@ -595,7 +589,6 @@ def config_parser():
                         help='set for spherical 360 scenes')
     parser.add_argument("--llffhold", type=int, default=8,
                         help='will take every 1/N images as LLFF test set, paper uses 8')
-
     # logging/saving options
     parser.add_argument("--i_print", type=int, default=100,
                         help='frequency of console printout and metric loggin')
@@ -609,8 +602,34 @@ def config_parser():
                         help='frequency of render_poses video saving')
 
     return parser
+"""
+The code defines a function train() that is used to train a neural network model to render 3D scenes
+using the neural radiance fields (NeRF) method.
 
+The function first parses command line arguments, and then loads the data based on the provided dataset type.
+The supported dataset types are llff, blender, and deepvoxels. Depending on the dataset type,
+the function loads the images, camera poses, and other necessary data.
 
+Then, the function creates a NeRF model using the create_nerf() function. This function creates
+and returns two dictionaries, render_kwargs_train and render_kwargs_test, that contain the keyword arguments
+needed to render the scene during training and testing, respectively. The function also returns start,
+grad_vars, and models. start is the training step number to start from, grad_vars is a list of trainable
+variables in the model, and models is a dictionary containing the created models, including the optimizer.
+
+Next, the function sets the near and far bounds for the scene based on the loaded data.
+If the no_ndc flag is set to True, the near and far bounds are determined by multiplying the minimum and
+maximum depth values by 0.9 and 1, respectively. Otherwise, the near bound is set to 0 and the far bound
+is set to 1.
+
+If the render_only flag is set to True, the function skips training and directly renders the scene using
+the provided or trained model. The rendered images are saved to a specified directory.
+
+If render_only is False, the function creates an optimizer with the specified learning rate and
+learning rate decay, if any. Then, the function trains the model using the loaded data and the specified
+training parameters, such as the batch size, number of epochs, and number of training steps.
+
+Finally, the function saves the trained model and the training and command line arguments to the specified directory.
+"""
 def train():
     parser = config_parser()
     args = parser.parse_args()
