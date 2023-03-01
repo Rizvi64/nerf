@@ -23,7 +23,6 @@ import numpy as np
 from load_blender import load_blender_data
 from load_deepvoxels import load_dv_data
 from load_llff import load_llff_data
-from run_nerf_helpers import *
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 
 
@@ -257,8 +256,8 @@ def render_rays(ray_batch,
         ret['z_std'] = tf.math.reduce_std(z_samples, -1)  # [num_rays]
 
 #     ret = network_fn(ray_batch, **kwargs)
-    for k, v in ret.items():
-        tf.debugging.check_numerics(v, 'output {}'.format(k))
+    for k, val_ss in ret.items():
+        tf.debugging.check_numerics(val_ss, 'output {}'.format(k))
     return ret
 
 def batchify_rays(rays_flat, chunk=1024*32, network_fn=None, **kwargs):
@@ -266,11 +265,11 @@ def batchify_rays(rays_flat, chunk=1024*32, network_fn=None, **kwargs):
     all_ret = {}
     for i in range(0, rays_flat.shape[0], chunk):
         ret = render_rays(rays_flat[i:i+chunk], network_fn=network_fn, **kwargs)
-        for k, v in ret.items():
+        for k, val_sk in ret.items():
             if k not in all_ret:
-                all_ret[k] = v
+                all_ret[k] = val_sk
             else:
-                all_ret[k] = tf.concat([all_ret[k], v], axis=0)
+                all_ret[k] = tf.concat([all_ret[k], val_sk], axis=0)
     return all_ret
 
 
@@ -491,7 +490,7 @@ def create_nerf(args):
                 ft_weights[:-11], ft_weights[-10:])
             print('Reloading fine from', ft_weights_fine)
             model_fine.set_weights(np.load(ft_weights_fine, allow_pickle=True))
-    return render_kwargs_train, render_kwargs_test, start, grad_vars, models
+    return render_kwargs_train, render_kwargs_test, start, grad_vars, models    
 
 """The config_parser function appears to be responsible for parsing configuration settings for the NeRF model. 
 It uses the configargparse module to define and parse the configuration settings. 
@@ -518,7 +517,7 @@ def config_parser():
                         default=8, help='layers in fine network')
     parser.add_argument("--netwidth_fine", type=int, default=256,
                         help='channels per layer in fine network')
-    parser.add_argument("--N_rand", type=int, default=32*32*4,
+    parser.add_argument("--num_rand", type=int, default=32*32*4,
                         help='batch size (number of random rays per gradient step)')
     parser.add_argument("--lrate", type=float,
                         default=5e-4, help='learning rate')
@@ -556,7 +555,7 @@ def config_parser():
     parser.add_argument("--multires", type=int, default=10,
                         help='log2 of max freq for positional encoding (3D location)')
     parser.add_argument("--multires_views", type=int, default=4,
-                        help='log2 of max freq for positional encoding (2D direction)')
+                         help='log2 of max freq for positional encoding (2D direction)')
     parser.add_argument("--raw_noise_std", type=float, default=0.,
                         help='std dev of noise added to regularize sigma_a output, 1e0 recommended')
     parser.add_argument("--render_only", action='store_true',
@@ -767,7 +766,7 @@ def train():
     global_step.assign(start)
 
     # Prepare raybatch tensor if batching random rays
-    N_rand = args.N_rand
+    num_rand = args.num_rand
     use_batching = not args.no_batching
     if use_batching:
         # For random ray batching.
@@ -779,7 +778,7 @@ def train():
         print('get rays')
         # get_rays_np() returns rays_origin=[height, weight, 3], rays_direction=[H, W, 3]
         # for each pixel in the image. This stack() adds a new dimension.
-        rays = [get_rays_np(height, width, focal, p) for p in poses[:, :3, :4]]
+        rays = [get_rays_np(height, width, focal, px) for px in poses[:, :3, :4]]
         rays = np.stack(rays, axis=0)  # [N, ro+rd, H, W, 3]
         print('done, concats')
         # [N, ro+rd+rgb, height, width, 3]
@@ -814,14 +813,14 @@ def train():
 
         if use_batching:
             # Random over all images
-            batch = rays_rgb[i_batch:i_batch+N_rand]  # [B, 2+1, 3*?]
+            batch = rays_rgb[i_batch:i_batch+num_rand]  # [B, 2+1, 3*?]
             batch = tf.transpose(batch, [1, 0, 2])
 
             # batch_rays[i, n, xyz] = ray origin or direction, example_id, 3D position
             # target_s[n, rgb] = example_id, observed color.
             batch_rays, target_s = batch[:2], batch[2]
 
-            i_batch += N_rand
+            i_batch += num_rand
             if i_batch >= rays_rgb.shape[0]:
                 np.random.shuffle(rays_rgb)
                 i_batch = 0
@@ -832,7 +831,7 @@ def train():
             target = images[img_i]
             pose = poses[img_i, :3, :4]
 
-            if N_rand is not None:
+            if num_rand is not None:
                 rays_o, rays_d = get_rays(height, width, focal, pose)
                 if i < args.precrop_iters:
                     d_h = int(height//2 * args.precrop_frac)
@@ -848,7 +847,7 @@ def train():
                         tf.range(height), tf.range(width), indexing='ij'), -1)
                 coords = tf.reshape(coords, [-1, 2])
                 select_inds = np.random.choice(
-                    coords.shape[0], size=[N_rand], replace=False)
+                    coords.shape[0], size=[num_rand], replace=False)
                 select_inds = tf.gather_nd(coords, select_inds[:, tf.newaxis])
                 rays_o = tf.gather_nd(rays_o, select_inds)
                 rays_d = tf.gather_nd(rays_d, select_inds)
