@@ -64,3 +64,8 @@ jobs:
         conda run -n nerf pylint run_nerf.py
         conda run -n myenv pylint --fix --verbose run_nerf.py
       shell: bash
+      
+    - name: Run CodeQL Analysis
+      run: |
+        codeql database create --language=python --source-root . --name=my-db
+        codeql query run --database=my-db --query=query.ql --format=csv > results.csv
